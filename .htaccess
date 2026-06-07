@@ -1,0 +1,13 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /clinicdesk/
+    
+    # حماية: إذا كان الملف الحقيقي موجوداً في مسار المشروع (مثل الـ CSS أو الـ JS أو الصور) فقم بفتحه مباشرة ولا توجهه
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # توجيه الطلبات الوهمية والصفحات فقط إلى index.php
+    RewriteRule ^(.*)$ index.php [L,QSA]
+</IfModule>
