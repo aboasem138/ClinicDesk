@@ -1,72 +1,75 @@
+```php
 <?php
-// controllers/SpecializationController.php
 
+require_once __DIR__ . '/../core/Auth.php';
+require_once __DIR__ . '/../core/CSRF.php';
 require_once __DIR__ . '/../models/SpecializationModel.php';
 
-class SpecializationController {
-    private $specModel;
+class SpecializationController
+{
+    private $specializationModel;
 
-    public function __construct() {
-        // حماية أمنية: لا يمكن لأي شخص دخول هذا الكنترولر إلا إذا كان آدمن
+    public function __construct()
+    {
         Auth::requireRole('admin');
-        $this->specModel = new SpecializationModel();
+
+        $this->specializationModel =
+            new SpecializationModel();
     }
 
-    // عرض صفحة التخصصات
-    public function index() {
-        $specializations = $this->specModel->getAll();
-        require_once __DIR__ . '/../views/admin/specializations.php';
+    public function index()
+    {
+        $specializations =
+            $this->specializationModel
+            ->getAll();
+
+        require __DIR__ .
+            '/../views/specializations/index.php';
     }
 
-    // معالجة إضافة تخصص جديد
-    public function store() {
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header("Location: " . BASE_URL . "?page=specializations");
-            exit();
-        }
+    public function create()
+    {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-        // فحص توكن الحماية CSRF
-        if (!isset($_POST['csrf_token']) || !CSRF::validate($_POST['csrf_token'])) {
-            die("خطأ أمني: طلب غير مصرح به.");
-        }
-
-        $name = isset($_POST['name']) ? trim($_POST['name']) : '';
-
-        if (empty($name)) {
-            $_SESSION['error'] = "اسم التخصص مطلوب ولا يمكن تركه فارغاً.";
-        } else {
-            $result = $this->specModel->create($name);
-            if ($result) {
-                $_SESSION['success'] = "تم إضافة التخصص بنجاح.";
-            } else {
-                $_SESSION['error'] = "هذا التخصص موجود بالفعل في النظام.";
+            if (
+                !CSRF::validateToken(
+                    $_POST['csrf_token'] ?? ''
+                )
+            ) {
+                die('Invalid CSRF Token');
             }
+
+            $this->specializationModel
+                ->create(
+                    trim($_POST['name'])
+                );
+
+            header(
+                'Location: index.php?page=specializations'
+            );
+            exit;
         }
 
-        header("Location: " . BASE_URL . "?page=specializations");
-        exit();
+        require __DIR__ .
+            '/../views/specializations/create.php';
     }
 
-    // معالجة حذف تخصص
-    public function destroy() {
-        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    public function delete()
+    {
+        $id = (int)($_GET['id'] ?? 0);
 
-        if ($id > 0) {
-            // ملاحظة للمناقشة: في قاعدة البيانات وضعنا ON DELETE RESTRICT للتخصصات
-            // يعني لو التخصص مربوط بطبيب، السيرفر هيرفض الحذف تلقائياً وهيطلع خطأ آمن
-            try {
-                $result = $this->specModel->delete($id);
-                if ($result) {
-                    $_SESSION['success'] = "تم حذف التخصص بنجاح.";
-                } else {
-                    $_SESSION['error'] = "فشل عملية الحذف.";
-                }
-            } catch (Exception $e) {
-                $_SESSION['error'] = "لا يمكن حذف هذا التخصص لأنه مرتبط بأطباء مسجلين حالياً.";
-            }
+        if (
+            $this->specializationModel
+            ->isSafeToDelete($id)
+        ) {
+
+            $this->specializationModel
+                ->delete($id);
         }
 
-        header("Location: " . BASE_URL . "?page=specializations");
-        exit();
+        header(
+            'Location: index.php?page=specializations'
+        );
+        exit;
     }
 }

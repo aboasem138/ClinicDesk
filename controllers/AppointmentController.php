@@ -1,71 +1,157 @@
 <?php
-// controllers/AppointmentController.php
 
+require_once __DIR__ . '/../core/Auth.php';
+require_once __DIR__ . '/../core/CSRF.php';
 require_once __DIR__ . '/../models/AppointmentModel.php';
-require_once __DIR__ . '/../models/UserModel.php'; // لجلب قائمة الأطباء المتاحين للحجز
+require_once __DIR__ . '/../models/DoctorModel.php';
 
-class AppointmentController {
-    private $apptModel;
-    private $userModel;
+class AppointmentController
+{
+    private $appointmentModel;
+    private $doctorModel;
 
-    public function __construct() {
-        // حماية: يجب أن يكون المستخدم مريضاً للوصول لهذه العمليات
-        Auth::requireRole('patient');
-        $this->apptModel = new AppointmentModel();
-        $this->userModel = new UserModel();
+    public function __construct()
+    {
+        Auth::requireRole(
+            'admin',
+            'doctor',
+            'patient'
+        );
+
+        $this->appointmentModel =
+            new AppointmentModel();
+
+        $this->doctorModel =
+            new DoctorModel();
     }
 
-    // عرض جدول مواعيد المريض الحالي
-    public function index() {
-        $patientId = Auth::user('id');
-        $appointments = $this->apptModel->getByPatient($patientId);
-        
-        require_once __DIR__ . '/../views/patient/appointments.php';
-    }
+    public function index()
+    {
+        $role = Auth::role();
 
-    // عرض شاشة حجز موعد جديد
-    public function createView() {
-        // جلب قائمة الأطباء ليختار المريض طبيبه منهم
-        $doctors = $this->userModel->getAllDoctors();
-        require_once __DIR__ . '/../views/patient/book.php';
-    }
+        $page = (int)($_GET['p'] ?? 1);
 
-    // معالجة طلب الحجز (POST)
-    public function store() {
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header("Location: " . BASE_URL . "?page=appointments");
-            exit();
-        }
+        $user = Auth::currentUser();
 
-        if (!isset($_POST['csrf_token']) || !CSRF::validate($_POST['csrf_token'])) {
-            die("خطأ أمني: توكن غير صالح.");
-        }
+        if ($role === 'admin') {
 
-        $patientId = Auth::user('id');
-        $doctorId  = (int)$_POST['doctor_id'];
-        $appt_date = trim($_POST['appt_date']);
-        $appt_time = trim($_POST['appt_time']);
-        $reason    = trim($_POST['reason']);
+            $appointments =
+                $this->appointmentModel
+                ->getAll($page);
 
-        if ($doctorId <= 0 || empty($appt_date) || empty($appt_time)) {
-            $_SESSION['error'] = "يرجى اختيار الطبيب، التاريخ، والوقت بالشكل الصحيح.";
-            header("Location: " . BASE_URL . "?page=appointments&action=book");
-            exit();
-        }
+        } elseif ($role === 'patient') {
 
-        // تنفيذ الحجز عبر الموديل
-        $result = $this->apptModel->create($patientId, $doctorId, $appt_date, $appt_time, $reason);
+            $appointments =
+                $this->appointmentModel
+                ->getByPatient(
+                    $user['id'],
+                    $page
+                );
 
-        if ($result === "conflict") {
-            $_SESSION['error'] = "عذراً، هذا الطبيب لديه موعد آخر في نفس الوقت والتاريخ المختارين. يرجى اختيار وقت آخر.";
-            header("Location: " . BASE_URL . "?page=appointments&action=book");
-        } elseif ($result) {
-            $_SESSION['success'] = "تم تقديم طلب حجز الموعد بنجاح، بانتظار تأكيد الطبيب.";
-            header("Location: " . BASE_URL . "?page=appointments");
         } else {
-            $_SESSION['error'] = "حدث خطأ غير متوقع أثناء الحجز.";
-            header("Location: " . BASE_URL . "?page=appointments&action=book");
+
+            $doctor =
+                $this->doctorModel
+                ->findByUserId(
+                    $user['id']
+                );
+
+            $appointments =
+                $this->appointmentModel
+                ->getByDoctor(
+                    $doctor['id'],
+                    $page
+                );
         }
-        exit();
+
+        require __DIR__ .
+            '/../views/appointments/index.php';
+    }
+
+    public function create()
+    {
+        Auth::requireRole('patient');
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+            if (
+                $this->appointmentModel
+                ->hasConflict(
+                    $_POST['doctor_id'],
+                    $_POST['appt_date'],
+                    $_POST['appt_time']
+                )
+            ) {
+
+                $_SESSION['flash'] = [
+                    'type' => 'danger',
+                    'message' =>
+                    'This slot is already booked'
+                ];
+
+                header(
+                    'Location: index.php?page=appointments&action=create'
+                );
+                exit;
+            }
+            if (
+    !CSRF::validateToken(
+        $_POST['csrf_token'] ?? ''
+    )
+) {
+    die('Invalid CSRF Token');
+}
+
+            $this->appointmentModel->book([
+                'patient_id' =>
+                    Auth::currentUser()['id'],
+
+                'doctor_id' =>
+                    $_POST['doctor_id'],
+
+                'appt_date' =>
+                    $_POST['appt_date'],
+
+                'appt_time' =>
+                    $_POST['appt_time'],
+
+                'reason' =>
+                    $_POST['reason']
+            ]);
+
+            header(
+                'Location: index.php?page=appointments'
+            );
+            exit;
+        }
+
+        $doctors =
+            $this->doctorModel->getAll();
+
+        require __DIR__ .
+            '/../views/appointments/create.php';
+    }
+
+    public function status()
+    {
+        Auth::requireRole(
+            'admin',
+            'doctor'
+        );
+
+        $id = (int)$_GET['id'];
+
+        $status = $_GET['status'];
+
+        $this->appointmentModel
+            ->updateStatus(
+                $id,
+                $status
+            );
+
+        header(
+            'Location: index.php?page=appointments'
+        );
+        exit;
     }
 }

@@ -1,12 +1,25 @@
 <?php
-// models/BaseModel.php
 
-class BaseModel {
-    // خاصية محمية تسمح للكلاسات التي ترث هذا الكلاس بالوصول للـ DB
+require_once __DIR__ . '/../core/Database.php';
+
+abstract class BaseModel
+{
     protected $db;
 
-    public function __construct() {
-        // جلب الاتصال الموحد من كلاس Database
+    public function __construct()
+    {
         $this->db = Database::getInstance();
+    }
+
+    protected function execute(
+        string $sql,
+        string $types = "",
+        array $params = []
+    ) {
+        return $this->db->query(
+            $sql,
+            $types,
+            $params
+        );
     }
 }
